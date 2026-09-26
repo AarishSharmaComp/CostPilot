@@ -1,0 +1,155 @@
+package com.costpilot.aws.service;
+
+import com.costpilot.aws.entity.AwsAccount;
+import com.costpilot.aws.entity.AwsRegion;
+import com.costpilot.aws.entity.AwsResource;
+import com.costpilot.aws.repository.AwsAccountRepository;
+import com.costpilot.aws.repository.AwsRegionRepository;
+import com.costpilot.aws.repository.AwsResourceRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesRequest;
+import software.amazon.awssdk.services.ec2.model.DescribeInstancesResponse;
+import software.amazon.awssdk.services.ec2.model.Instance;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+@Service
+public class AwsResourceSyncService {
+
+    private final AwsAccountRepository awsAccountRepository;
+    private final AwsRegionRepository awsRegionRepository;
+    private final AwsResourceRepository awsResourceRepository;
+    private final Ec2Client ec2Client;
+
+    public AwsResourceSyncService(
+            AwsAccountRepository awsAccountRepository,
+            AwsRegionRepository awsRegionRepository,
+            AwsResourceRepository awsResourceRepository,
+            Ec2Client ec2Client
+    ) {
+        this.awsAccountRepository = awsAccountRepository;
+        this.awsRegionRepository = awsRegionRepository;
+        this.awsResourceRepository = awsResourceRepository;
+        this.ec2Client = ec2Client;
+    }
+
+    @Transactional
+    public int syncEc2Resources(UUID awsAccountId) {
+
+        AwsAccount awsAccount = awsAccountRepository.findById(awsAccountId)
+                .orElseThrow(() -> new RuntimeException("AWS account not found"));
+
+        String regionCode = awsAccount.getDefaultRegion();
+
+        if (regionCode == null || regionCode.isBlank()) {
+            throw new RuntimeException("AWS account does not have a default region");
+        }
+
+        AwsRegion awsRegion = awsRegionRepository.findByCode(regionCode)
+                .orElseThrow(() ->
+                        new RuntimeException("AWS region not found: " + regionCode)
+                );
+
+        DescribeInstancesRequest request =
+                DescribeInstancesRequest.builder()
+                        .build();
+
+        DescribeInstancesResponse response =
+                ec2Client.describeInstances(request);
+
+        int synchronizedCount = 0;
+
+        for (var reservation : response.reservations()) {
+
+            for (Instance instance : reservation.instances()) {
+
+                AwsResource resource =
+                        awsResourceRepository
+                                .findByAwsAccount_IdAndResourceId(
+                                        awsAccountId,
+                                        instance.instanceId()
+                                )
+                                .orElseGet(AwsResource::new);
+
+                resource.setAwsAccount(awsAccount);
+                resource.setRegion(awsRegion);
+
+                resource.setResourceId(instance.instanceId());
+
+                resource.setResourceArn(
+                        "arn:aws:ec2:"
+                                + regionCode
+                                + ":"
+                                + awsAccount.getAccountId()
+                                + ":instance/"
+                                + instance.instanceId()
+                );
+
+                resource.setResourceName(
+                        instance.tags()
+                                .stream()
+                                .filter(tag -> "Name".equals(tag.key()))
+                                .map(tag -> tag.value())
+                                .findFirst()
+                                .orElse(null)
+                );
+
+                resource.setServiceName("EC2");
+                resource.setResourceType("INSTANCE");
+
+                resource.setStatus(
+                        instance.state() != null
+                                ? instance.state().nameAsString()
+                                : null
+                );
+
+                resource.setInstanceType(
+                        instance.instanceTypeAsString()
+                );
+
+                if (instance.placement() != null) {
+                    resource.setAvailabilityZone(
+                            instance.placement().availabilityZone()
+                    );
+                }
+
+                resource.setTerraformManaged(false);
+                resource.setTerraformAddress(null);
+
+                if (instance.launchTime() != null) {
+                    resource.setLaunchTime(
+                            LocalDateTime.ofInstant(
+                                    instance.launchTime(),
+                                    ZoneOffset.UTC
+                            )
+                    );
+                }
+
+                resource.setMetadata("{}");
+
+                LocalDateTime now = LocalDateTime.now();
+
+                if (resource.getDiscoveredAt() == null) {
+                    resource.setDiscoveredAt(now);
+                }
+
+                resource.setUpdatedAt(now);
+
+                awsResourceRepository.save(resource);
+
+                synchronizedCount++;
+            }
+        }
+
+        awsAccount.setLastSyncedAt(LocalDateTime.now());
+        awsAccount.setUpdatedAt(LocalDateTime.now());
+
+        awsAccountRepository.save(awsAccount);
+
+        return synchronizedCount;
+    }
+}
