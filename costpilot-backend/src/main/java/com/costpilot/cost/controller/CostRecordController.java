@@ -1,10 +1,10 @@
 package com.costpilot.cost.controller;
-
+import com.costpilot.cost.dto.ServiceCostResponse;
 import com.costpilot.cost.dto.CostRecordResponse;
+import com.costpilot.cost.dto.CostSummaryResponse;
 import com.costpilot.cost.service.CostQueryService;
 import com.costpilot.cost.service.CostRecordService;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.UUID;
 
@@ -41,5 +41,13 @@ public class CostRecordController {
             @PathVariable UUID accountId
     ) {
         return costQueryService.getCostsByAccount(accountId);
+    }
+    @GetMapping("/summary")
+    public CostSummaryResponse getCostSummary() {
+        return costQueryService.getCostSummary();
+    }
+    @GetMapping("/service-breakdown")
+    public List<ServiceCostResponse> getServiceCostBreakdown() {
+        return costQueryService.getServiceCostBreakdown();
     }
 }
