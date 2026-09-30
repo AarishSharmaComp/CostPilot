@@ -1,5 +1,6 @@
 package com.costpilot.cost.service;
 
+import com.costpilot.cost.dto.CostTrendResponse;
 import com.costpilot.cost.dto.CostRecordResponse;
 import com.costpilot.cost.dto.CostSummaryResponse;
 import com.costpilot.cost.dto.ServiceCostResponse;
@@ -7,6 +8,7 @@ import com.costpilot.cost.entity.CostRecord;
 import com.costpilot.cost.repository.CostRecordRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -116,4 +118,51 @@ public class CostQueryService {
                 costRecord.getCurrency()
         );
     }
+    public List<CostTrendResponse> getCostTrend() {
+
+    List<CostRecord> records =
+            costRecordRepository.findAll();
+
+    Map<LocalDate, BigDecimal> dailyCosts =
+            new LinkedHashMap<>();
+
+    for (CostRecord record : records) {
+
+        if (record.getBillingDate() == null) {
+            continue;
+        }
+
+        BigDecimal cost =
+                record.getUnblendedCost();
+
+        if (cost == null) {
+            continue;
+        }
+
+        dailyCosts.merge(
+                record.getBillingDate(),
+                cost,
+                BigDecimal::add
+        );
+    }
+
+    String currency = records.stream()
+            .map(CostRecord::getCurrency)
+            .filter(value ->
+                    value != null && !value.isBlank())
+            .findFirst()
+            .orElse("USD");
+
+    return dailyCosts.entrySet()
+            .stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(entry ->
+                    new CostTrendResponse(
+                            entry.getKey(),
+                            entry.getValue(),
+                            currency
+                    )
+            )
+            .toList();
+}
 }

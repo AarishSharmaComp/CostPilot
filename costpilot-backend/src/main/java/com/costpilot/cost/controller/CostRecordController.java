@@ -7,6 +7,7 @@ import com.costpilot.cost.service.CostRecordService;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
+import com.costpilot.cost.dto.CostTrendResponse;
 
 @RestController
 @RequestMapping("/api/aws/costs")
@@ -50,4 +51,8 @@ public class CostRecordController {
     public List<ServiceCostResponse> getServiceCostBreakdown() {
         return costQueryService.getServiceCostBreakdown();
     }
+    @GetMapping("/trend")
+public List<CostTrendResponse> getCostTrend() {
+    return costQueryService.getCostTrend();
+}
 }
