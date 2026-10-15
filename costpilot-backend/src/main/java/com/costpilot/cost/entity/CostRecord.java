@@ -24,6 +24,9 @@ public class CostRecord {
     @JoinColumn(name = "resource_id")
     private AwsResource resource;
 
+    @Column(name = "record_type")
+    private String recordType;
+
     @Column(name = "service_name")
     private String serviceName;
 
@@ -155,5 +158,12 @@ public class CostRecord {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+    public String getRecordType() {
+    return recordType;
+}
+
+    public void setRecordType(String recordType) {
+        this.recordType = recordType;
     }
 }

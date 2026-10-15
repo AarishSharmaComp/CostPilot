@@ -6,6 +6,7 @@ import com.costpilot.cost.dto.CostSummaryResponse;
 import com.costpilot.cost.dto.ServiceCostResponse;
 import com.costpilot.cost.entity.CostRecord;
 import com.costpilot.cost.repository.CostRecordRepository;
+
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -20,7 +21,9 @@ public class CostQueryService {
 
     private final CostRecordRepository costRecordRepository;
 
-    public CostQueryService(CostRecordRepository costRecordRepository) {
+    public CostQueryService(
+            CostRecordRepository costRecordRepository
+    ) {
         this.costRecordRepository = costRecordRepository;
     }
 
@@ -31,8 +34,11 @@ public class CostQueryService {
                 .toList();
     }
 
-    public List<CostRecordResponse> getCostsByAccount(UUID accountId) {
-        return costRecordRepository.findByAwsAccount_Id(accountId)
+    public List<CostRecordResponse> getCostsByAccount(
+            UUID accountId
+    ) {
+        return costRecordRepository
+                .findByAwsAccount_Id(accountId)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -40,37 +46,140 @@ public class CostQueryService {
 
     public CostSummaryResponse getCostSummary() {
 
-        List<CostRecord> records = costRecordRepository.findAll();
+        List<CostRecord> records =
+                costRecordRepository.findAll();
 
-        BigDecimal totalCost = records.stream()
-                .map(CostRecord::getUnblendedCost)
-                .filter(cost -> cost != null)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal grossUsage = BigDecimal.ZERO;
+        BigDecimal credits = BigDecimal.ZERO;
+        BigDecimal tax = BigDecimal.ZERO;
+        BigDecimal otherAdjustments = BigDecimal.ZERO;
+
+        for (CostRecord record : records) {
+
+            BigDecimal cost = record.getUnblendedCost();
+
+            if (cost == null) {
+                continue;
+            }
+
+            String recordType = record.getRecordType();
+
+            if (recordType == null) {
+                recordType = "";
+            }
+
+            recordType = recordType.trim();
+
+            if (recordType.equalsIgnoreCase("Usage")) {
+
+                // Count positive usage charges as gross usage.
+                if (cost.signum() > 0) {
+                    grossUsage = grossUsage.add(cost);
+                } else if (cost.signum() < 0) {
+                    otherAdjustments =
+                            otherAdjustments.add(cost);
+                }
+
+            } else if (recordType.equalsIgnoreCase("Credit")) {
+
+                // Store credits as a positive display amount.
+                credits = credits.add(cost.abs());
+
+            } else if (recordType.equalsIgnoreCase("Tax")) {
+
+                tax = tax.add(cost);
+
+            } else {
+
+                // Preserve other record types in the net calculation.
+                otherAdjustments =
+                        otherAdjustments.add(cost);
+            }
+        }
+
+        /*
+         * Net cost includes usage, credits, taxes and
+         * other adjustments.
+         */
+        BigDecimal netCost = grossUsage
+                .subtract(credits)
+                .add(tax)
+                .add(otherAdjustments);
 
         String currency = records.stream()
                 .map(CostRecord::getCurrency)
-                .filter(value -> value != null && !value.isBlank())
+                .filter(value ->
+                        value != null && !value.isBlank())
                 .findFirst()
                 .orElse("USD");
 
         return new CostSummaryResponse(
-                totalCost,
+                grossUsage,
+                credits,
+                tax,
+                netCost,
                 currency,
                 records.size()
         );
     }
+        public BigDecimal getMonthlyGrossUsage() {
+
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+
+        List<CostRecord> records =
+                costRecordRepository.findAll();
+
+        BigDecimal monthlyGrossUsage = BigDecimal.ZERO;
+
+        for (CostRecord record : records) {
+
+                if (record.getBillingDate() == null ||
+                        record.getUnblendedCost() == null) {
+                continue;
+                }
+
+                LocalDate billingDate = record.getBillingDate();
+
+                // Include only records from the current month.
+                if (billingDate.isBefore(monthStart) ||
+                        billingDate.isAfter(today)) {
+                continue;
+                }
+
+                String recordType = record.getRecordType();
+
+                if (recordType == null ||
+                        !recordType.trim().equalsIgnoreCase("Usage")) {
+                continue;
+                }
+
+                BigDecimal cost = record.getUnblendedCost();
+
+                // Gross usage includes positive usage charges.
+                if (cost.signum() > 0) {
+                monthlyGrossUsage =
+                        monthlyGrossUsage.add(cost);
+                }
+        }
+
+        return monthlyGrossUsage;
+        }
 
     public List<ServiceCostResponse> getServiceCostBreakdown() {
 
-        List<CostRecord> records = costRecordRepository.findAll();
+        List<CostRecord> records =
+                costRecordRepository.findAll();
 
-        Map<String, BigDecimal> serviceCosts = new LinkedHashMap<>();
+        Map<String, BigDecimal> serviceCosts =
+                new LinkedHashMap<>();
 
         for (CostRecord record : records) {
 
             String serviceName = record.getServiceName();
 
-            if (serviceName == null || serviceName.isBlank()) {
+            if (serviceName == null ||
+                    serviceName.isBlank()) {
                 serviceName = "Unknown";
             }
 
@@ -89,7 +198,8 @@ public class CostQueryService {
 
         String currency = records.stream()
                 .map(CostRecord::getCurrency)
-                .filter(value -> value != null && !value.isBlank())
+                .filter(value ->
+                        value != null && !value.isBlank())
                 .findFirst()
                 .orElse("USD");
 
@@ -103,7 +213,9 @@ public class CostQueryService {
                 .toList();
     }
 
-    private CostRecordResponse toResponse(CostRecord costRecord) {
+    private CostRecordResponse toResponse(
+            CostRecord costRecord
+    ) {
 
         return new CostRecordResponse(
                 costRecord.getId(),
@@ -118,7 +230,8 @@ public class CostQueryService {
                 costRecord.getCurrency()
         );
     }
-    public List<CostTrendResponse> getCostTrend() {
+
+ public List<CostTrendResponse> getCostTrend() {
 
     List<CostRecord> records =
             costRecordRepository.findAll();
@@ -132,10 +245,22 @@ public class CostQueryService {
             continue;
         }
 
-        BigDecimal cost =
-                record.getUnblendedCost();
+        if (record.getUnblendedCost() == null) {
+            continue;
+        }
 
-        if (cost == null) {
+        String recordType = record.getRecordType();
+
+        // Include only usage charges in the gross usage trend.
+        if (recordType == null ||
+                !recordType.equalsIgnoreCase("Usage")) {
+            continue;
+        }
+
+        BigDecimal cost = record.getUnblendedCost();
+
+        // Exclude negative adjustments from gross usage.
+        if (cost.signum() < 0) {
             continue;
         }
 
@@ -156,13 +281,11 @@ public class CostQueryService {
     return dailyCosts.entrySet()
             .stream()
             .sorted(Map.Entry.comparingByKey())
-            .map(entry ->
-                    new CostTrendResponse(
-                            entry.getKey(),
-                            entry.getValue(),
-                            currency
-                    )
-            )
+            .map(entry -> new CostTrendResponse(
+                    entry.getKey(),
+                    entry.getValue(),
+                    currency
+            ))
             .toList();
 }
 }
