@@ -52,7 +52,25 @@ public class CostRecordController {
         return costQueryService.getServiceCostBreakdown();
     }
     @GetMapping("/trend")
-public List<CostTrendResponse> getCostTrend() {
-    return costQueryService.getCostTrend();
+    public List<CostTrendResponse> getCostTrend(
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(defaultValue = "false") boolean currentMonth
+    ) {
+        if (currentMonth) {
+            return costQueryService.getCurrentMonthCostTrend();
+        }
+
+        return costQueryService.getCostTrend(days);
+    }
+    @GetMapping("/monthly-usage")
+    public java.math.BigDecimal getMonthlyUsage() {
+        return costQueryService.getMonthlyGrossUsage();
+    }
+    @GetMapping("/gross-usage")
+public java.math.BigDecimal getGrossUsage(
+        @RequestParam(defaultValue = "30") int days
+) {
+    return costQueryService.getGrossUsage(days);
 }
+    
 }

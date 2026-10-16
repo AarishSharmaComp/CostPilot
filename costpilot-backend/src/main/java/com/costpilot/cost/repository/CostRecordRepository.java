@@ -22,6 +22,11 @@ public interface CostRecordRepository
             LocalDate endDate
     );
 
+    List<CostRecord> findByBillingDateBetween(
+            LocalDate startDate,
+            LocalDate endDate
+    );
+
     @Modifying
     @Transactional
     @Query("""
@@ -36,4 +41,4 @@ public interface CostRecordRepository
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );
-}
+}       
